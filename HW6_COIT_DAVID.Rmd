@@ -1,0 +1,260 @@
+---
+title: "Support Vector Machines(SVMs) Homework"
+author: "David Coit"
+date: "11/26/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load relevant libraries, include=FALSE}
+library(tidyverse)
+library(mlbench)
+library(caret)
+library(pROC)
+library(randomForest)
+library(tree)
+library(rpart)
+library(rpart.plot)
+```
+
+# Homework
+
+### 1. Choose an appropriate machine learning dataset and use SVM with two different kernels. Compare the results.
+
+```{r}
+# Import the Pima Indians Diabetes dataset as "pima"
+data("PimaIndiansDiabetes")
+pima <- PimaIndiansDiabetes
+rm(PimaIndiansDiabetes)
+
+# check dataset for NA values
+if(any(is.na(pima))){ print("dataset contains NA values")}
+
+# ensure predictor variables are numeric
+pima = transform(pima, 
+                 pregnant = as.numeric(pregnant),
+                 glucose = as.numeric(glucose),
+                 pressure = as.numeric(pressure),
+                 triceps = as.numeric(triceps),
+                 insulin = as.numeric(insulin),
+                 mass = as.numeric(mass),
+                 pedigree = as.numeric(pedigree),
+                 age = as.numeric(age)
+                 )
+```
+
+
+```{r}
+# set up train/test split
+train_size = floor(0.75 * nrow(pima))
+train_pos <- sample(seq_len(nrow(pima)), size = train_size)
+
+train_classification <- pima[train_pos, ]
+test_classification <- pima[-train_pos, ]
+
+```
+
+
+```{r}
+set.seed(1618)
+control = trainControl(method = "repeatedcv", 
+                       repeats = 5, 
+                       classProbs = T, 
+                       savePredictions = T)
+
+svm_lin = train(diabetes ~ .,  
+            data = train_classification, 
+            method = "svmLinear", 
+            tuneLength = 10, 
+            trControl = control)
+
+# Display linear kernel SVM results
+svm_lin
+
+# Calculate ROC
+roc_lin = roc(predictor = svm_lin$pred$pos, 
+             response = svm_lin$pred$obs)$auc
+roc_lin
+
+# Plot ROC curve
+plot(x = roc(predictor = svm_lin$pred$pos, 
+             response = svm_lin$pred$obs)$specificities, 
+     y = roc(predictor = svm_lin$pred$pos, 
+             response = svm_lin$pred$obs)$sensitivities, 
+     col= "blue", 
+     xlim = c(1, 0), 
+     type ="l", 
+     ylab = "Sensitivity", 
+     xlab = "Specificity",
+     main = "Pima Diabetes Prediction \n ROC, SVM Linear Kernel")
+```
+```{r}
+# Obtain confusion matrix
+svm_lin_test = predict(svm_lin, newdata = test_classification)
+confusionMatrix(svm_lin_test, reference = test_classification$diabetes)
+```
+
+
+
+
+
+
+
+
+```{r}
+set.seed(1618)
+control = trainControl(method = "repeatedcv",
+                       repeats = 5,
+                       classProbs = T,
+                       savePredictions = T)
+
+svm_rad = train(diabetes ~ .,
+            data = train_classification,
+            method = "svmRadial",
+            tuneLength = 10,
+            trControl = control)
+
+svm_rad
+
+roc_rad = roc(predictor = svm_rad$pred$pos,
+             response = svm_rad$pred$obs)$auc
+roc_rad
+
+plot(x = roc(predictor = svm_rad$pred$pos,
+             response = svm_rad$pred$obs)$specificities,
+     y = roc(predictor = svm_rad$pred$pos,
+             response = svm_rad$pred$obs)$sensitivities,
+     col= "blue",
+     xlim = c(1, 0),
+     type ="l",
+     ylab = "Sensitivity",
+     xlab = "Specificity",
+     main = "Pima Diabetes Prediction \n ROC, SVM Radial Kernel")
+```
+```{r}
+svm_rad_test = predict(svm_rad, newdata = test_classification)
+confusionMatrix(svm_rad_test, reference = test_classification$diabetes)
+```
+
+
+**Comparing the use of a linear vs. radial kernel in a support vector machine to predict diabetes status with all variables, we see that the accuracies of the two methods are comparable when applied to classifying the observations in the test set - 76% and 75.5% respectively. Compared to the radial kernel, the linear kernel results in a higher sensitivity (0.93 vs. 0.87) but a lower specificity (0.46 vs. 0.57) when models are applied to the test data. Finally, the optimal tuning parameter "C" as determined by model accuracy on the training data differed between the two models.**
+
+
+
+
+### 2. Attempt using SVM after using a previously covered feature selection method. Do the results improve? Explain.
+
+```{r}
+# Feature selection
+# Random forest feature importance
+
+rfmodel = randomForest(diabetes ~ .,
+                       data=train_classification,
+                       importance = TRUE,
+                       oob.times = 15,
+                       confusion = TRUE,
+                       )
+# rank features based on importance
+importance(rfmodel)
+```
+
+```{r}
+#Regression tree based method
+# Tree with categorical day / month columns
+set.seed(1618)
+tree.pima <-  rpart(
+  formula = diabetes ~ .,
+  data = train_classification,
+  method = "anova"
+)
+rpart.plot(tree.pima, roundint = FALSE)
+
+
+```
+
+
+
+**Based on the results of the regression tree, we will retry our model using only the variables glucose, mass, pedigree, and age. The random forest model we built also identified glucose, mass, and age as variables that resulted in the highest mean decrease in accuracy when omitted.**
+
+```{r}
+set.seed(1618)
+control = trainControl(method = "repeatedcv",
+                       repeats = 5,
+                       classProbs = T,
+                       savePredictions = T)
+
+svm_lin2 = train(diabetes ~ glucose + mass + pedigree + age,
+            data = train_classification,
+            method = "svmLinear",
+            tuneLength = 10,
+            trControl = control)
+
+svm_lin2
+
+roc_lin2 = roc(predictor = svm_lin2$pred$pos, 
+             response = svm_lin2$pred$obs)$auc
+roc_lin2
+
+plot(x = roc(predictor = svm_lin2$pred$pos, 
+             response = svm_lin2$pred$obs)$specificities, 
+     y = roc(predictor = svm_lin2$pred$pos, 
+             response = svm_lin2$pred$obs)$sensitivities, 
+     col= "blue", 
+     xlim = c(1, 0), 
+     type ="l", 
+     ylab = "Sensitivity", 
+     xlab = "Specificity",
+     main = "Pima Diabetes Prediction \n ROC, SVM Linear Kernel with Feature Selection")
+```
+
+```{r}
+svm_lin2_test = predict(svm_lin2, newdata = test_classification)
+confusionMatrix(svm_lin2_test, reference = test_classification$diabetes)
+```
+
+
+
+```{r}
+set.seed(1618)
+control = trainControl(method = "repeatedcv",
+                       repeats = 5,
+                       classProbs = T,
+                       savePredictions = T)
+
+svm_rad2 = train(diabetes ~ glucose,
+            data = train_classification,
+            method = "svmRadial",
+            tuneLength = 10,
+            trControl = control)
+
+svm_rad2
+
+roc_rad2 = roc(predictor = svm_rad2$pred$pos, 
+             response = svm_rad2$pred$obs)$auc
+roc_rad2
+
+plot(x = roc(predictor = svm_rad2$pred$pos, 
+             response = svm_rad2$pred$obs)$specificities, 
+     y = roc(predictor = svm_rad2$pred$pos, 
+             response = svm_rad2$pred$obs)$sensitivities, 
+     col= "blue", 
+     xlim = c(1, 0), 
+     type ="l", 
+     ylab = "Sensitivity", 
+     xlab = "Specificity",
+     main = "Pima Diabetes Prediction \n ROC, SVM Radial Kernel with Feature Selection")
+
+```
+
+```{r}
+svm_rad2_test = predict(svm_rad2, newdata = test_classification)
+confusionMatrix(svm_rad2_test, reference = test_classification$diabetes)
+```
+
+**The use of feature selection before building the support vector machine model worsens the performance of models on testing data in all cases except one - the sensitivity of the SVM model built with a radial kernel improves from 0.88 to 0.92 when feature selection is performed first. However, overall model accuracy decreases, as does specificity.**
+\n 
+
+**I understand this to be happening for two reasons - one is that by performing feature selection we are in effect reducing the number of dimensions in which our discriminating hyperplane is embedded, which reduces the potential ways that the model can fit the data. Additionally, I understand that the tuning parameter C already functions as a sort of regularization parameter when building the model. To the extent that regularization methods function to balance bias and variance, pre-model-training feature selection with SVM may be generally redundant and occasionally harmful, as observed in this case.**
